@@ -6,7 +6,7 @@ import colorsys
 class GameConfig:
     def __init__(self):
         self.WINDOW_MIN_SIZE = (800, 600)
-        self.FPS = 60
+        self.FPS = 120
         self.DAMPING_FACTOR = 0.98
         self.GRAVITY = 9.8 / self.FPS
         self.BALL_RADIUS = 10
@@ -116,6 +116,7 @@ class PingPongGame:
     def setup_sound(self):
         pygame.mixer.init()
         self.bounce_sound = pygame.mixer.Sound('pingpang.wav')
+        pygame.mixer.music.set_volume(0.5)
 
     def setup_controls(self):
         self.keys = {
