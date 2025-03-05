@@ -30,26 +30,36 @@ GRAY = (128, 128, 128)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
+# 创建彩虹色
+rainbow_colors = [
+    (255, 0, 0),    # 红
+    (255, 127, 0),  # 橙
+    (255, 255, 0),  # 黄
+    (0, 255, 0),    # 绿
+    (0, 0, 255),    # 蓝
+    (75, 0, 130),   # 靛
+    (143, 0, 255)   # 紫
+]
 
 @dataclass
 class WaveConfig:
-    WAVE_COUNT = 10      # 每次点击产生的波数
-    RADIUS_GAP = 40     # 波之间的半径间隔
+    WAVE_COUNT = 1      # 每次点击产生的波数
+    RADIUS_GAP = 3     # 波之间的半径间隔
     WAVE_SPEED = 1      # 波的扩散速度
     ANGLE_STEP = 1      # 角度步进（越小越平滑）
 
 class Wave:
     color_index = 0
-    def __init__(self, x: float, y: float, start_x: float, start_y: float):
+    def __init__(self, x: float, y: float, start_x: float, start_y: float, radius: float = 0, color: Tuple[int,int,int] = None, line_width: int = 2):
         self.type = 0
         self.center_x = x
         self.center_y = y
         self.start_x = start_x
         self.start_y = start_y
-        self.radius = 0
+        self.radius = radius
         color_index = Wave.color_index
         Wave.color_index = (Wave.color_index + 1) % 3
-        self.color = BLUE if color_index == 0 else GREEN if color_index == 1 else RED
+        self.color = color if color != None else BLUE if color_index == 0 else GREEN if color_index == 1 else RED
         self.speed = 1
         self.points: List[Tuple[float, float]] = []
         # 预计算角度
@@ -99,16 +109,7 @@ class Wave:
             if self.type == 0:
                 pygame.draw.lines(screen, self.color, closed=True, points=translated_points, width=3)
             elif len(translated_points) >= 7:
-                # 创建彩虹色
-                rainbow_colors = [
-                    (255, 0, 0),    # 红
-                    (255, 127, 0),  # 橙
-                    (255, 255, 0),  # 黄
-                    (0, 255, 0),    # 绿
-                    (0, 0, 255),    # 蓝
-                    (75, 0, 130),   # 靛
-                    (143, 0, 255)   # 紫
-                ]
+                
                 # 绘制彩虹色线条
                 for i in range(len(translated_points) - 1):
                     pygame.draw.line(screen, rainbow_colors[i % len(rainbow_colors)], translated_points[i], translated_points[i + 1], width=2)
@@ -146,8 +147,8 @@ class WaveSimulation:
                 elif event.key == pygame.K_RETURN:
                     if self.last_wave_pos:
                         self.waves.clear()
-                        self.wave = Wave(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, *self.last_wave_pos)
-                        self.waves.append(self.wave)
+                        for i in range(len(rainbow_colors)):
+                            self.waves.append(Wave(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, *self.last_wave_pos, radius=i*3, color=rainbow_colors[i]))
                 elif event.key == pygame.K_0:
                     self.wave.type = 0
                 elif event.key == pygame.K_1:
@@ -162,8 +163,8 @@ class WaveSimulation:
                     self.border.height
                 )
                 if translated_border.collidepoint(pos):
-                    self.wave = Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, pos[0] - WINDOW_WIDTH // 2, pos[1] - WINDOW_HEIGHT // 2)
-                    self.waves.append(self.wave)
+                    for i in range(len(rainbow_colors)):
+                        self.waves.append(Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, pos[0] - WINDOW_WIDTH // 2, pos[1] - WINDOW_HEIGHT // 2, radius=i*3, color=rainbow_colors[i]))
                     self.last_wave_pos = (pos[0] - WINDOW_WIDTH // 2, pos[1] - WINDOW_HEIGHT // 2)
         
         return True
@@ -178,12 +179,15 @@ class WaveSimulation:
                     self.border.right
                 )
             if len(self.waves) < WaveConfig.WAVE_COUNT and self.waves[-1].radius > WaveConfig.RADIUS_GAP:
-                self.waves.append(Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, *self.last_wave_pos))
+                for i in range(len(rainbow_colors)):
+                    self.waves.append(Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, *self.last_wave_pos, radius=i*3, color=rainbow_colors[i]))
             if len(self.waves) >= WaveConfig.WAVE_COUNT and self.waves[0].radius > 1600:
                 if self.waves[0].radius > 2400:
                     self.waves.pop(0)
                 elif len(self.waves) < WaveConfig.WAVE_COUNT * 2 and self.waves[-1].radius > WaveConfig.RADIUS_GAP:
-                    self.waves.append(Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, *self.last_wave_pos))
+                    for i in range(len(rainbow_colors)):
+                        self.waves.append(Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, *self.last_wave_pos, radius=i*3, color=rainbow_colors[i]))
+
             
     def draw(self, screen):
         # 清屏
@@ -209,47 +213,31 @@ class WaveSimulation:
         
     def _draw_status(self, screen):
         font = pygame.font.Font(None, 24)
-        
-        x, y = 10, 10
-        surface = font.render("Esc - Exit", True, GRAY)
-        screen.blit(surface, (x, y))
-
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        status_texts = [
-            f"Status: {'Paused' if self.paused else 'Running'}",
-            f"Mouse: ({mouse_x-50:03d}, {mouse_y-50:03d})"
-        ]
-        x, y = 100, 10
-        for text in status_texts:
-            surface = font.render(text, True, GRAY)
-            screen.blit(surface, (x, y))
-            y += 25
-
-        status_texts = [
-            f"Waves: {len(self.waves)}/{WaveConfig.WAVE_COUNT}",
-            f"Radius: {0 if len(self.waves) == 0 else self.waves[0].radius}"
-        ]
-        x, y = 260, 10
-        for text in status_texts:
-            surface = font.render(text, True, GRAY)
-            screen.blit(surface, (x, y))
-            y += 25
-
         status_texts = [
             "Num 0-1 - Type",
             "Click - Start new wave",
+            "Space - Pause/Resume",
+            "Enter - Restart last waves",
         ]
-        x, y = 400, 10
+        
+        surface = font.render("Esc - Exit", True, GRAY)
+        x = 10
+        y = 10
+        screen.blit(surface, (x, y))
+
+        x = 100
         for text in status_texts:
             surface = font.render(text, True, GRAY)
             screen.blit(surface, (x, y))
             y += 25
 
         status_texts = [
-            "Space - Pause/Resume",
-            "Enter - Restart last waves",
+            f"Status: {'Paused' if self.paused else 'Running'}",
+            f"Waves: {len(self.waves)}/{WaveConfig.WAVE_COUNT}",
+            f"Radius: {0 if len(self.waves) == 0 else self.waves[0].radius}"
         ]
-        x, y = 600, 10
+        x = 300
+        y = 10
         for text in status_texts:
             surface = font.render(text, True, GRAY)
             screen.blit(surface, (x, y))
