@@ -6,7 +6,7 @@ import colorsys
 class GameConfig:
     def __init__(self):
         self.WINDOW_MIN_SIZE = (800, 600)
-        self.FPS = 120
+        self.FPS = 110
         self.DAMPING_FACTOR = 0.98
         self.GRAVITY = 9.8 / self.FPS
         self.BALL_RADIUS = 10
@@ -78,10 +78,7 @@ class PingPongGame:
         pygame.mixer.pre_init(frequency=44100, size=-16, channels=2, buffer=4096)
         pygame.init()
         self.config = GameConfig()
-        self.setup_display()
-        self.setup_game_objects()
-        self.setup_sound()
-        self.setup_controls()
+        self.setup_display(
 
     def setup_display(self):
         self.window_size = self.config.WINDOW_MIN_SIZE
