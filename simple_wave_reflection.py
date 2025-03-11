@@ -5,10 +5,12 @@ import numpy as np
 from dataclasses import dataclass
 from tkinter import *
 from tkinter import messagebox
+from numba import njit
 Tk().wm_withdraw() #to hide the main window
 
 # 初始化 Pygame
 pygame.init()
+clock = pygame.time.Clock()
 
 # 设置窗口
 WINDOW_WIDTH = 900
@@ -22,6 +24,12 @@ try:
 except Exception as ex:
     messagebox.showinfo("Error", f"Failed to load icon: {str(ex)}")
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+
+cursor_surface = pygame.image.load('crosshair.png').convert_alpha()
+cursor_rect = cursor_surface.get_rect()
+hotspot = (cursor_rect.width // 2, cursor_rect.height // 2)
+cursor = pygame.cursors.Cursor(hotspot, cursor_surface)
+pygame.mouse.set_cursor(cursor)
 
 # 颜色定义
 BLACK = (0, 0, 0)
@@ -37,6 +45,17 @@ class WaveConfig:
     RADIUS_GAP = 40     # 波之间的半径间隔
     WAVE_SPEED = 1      # 波的扩散速度
     ANGLE_STEP = 1      # 角度步进（越小越平滑）
+
+@njit
+def calculate_reflection_numba(coord, min_bound, max_bound):
+    total_range = max_bound - min_bound
+    relative_pos = coord - min_bound
+    n = relative_pos // total_range
+    remainder = relative_pos % total_range
+    if int(n) % 2 == 0:
+        return min_bound + remainder
+    else:
+        return max_bound - remainder
 
 class Wave:
     color_index = 0
@@ -79,17 +98,7 @@ class Wave:
             self.points.append((actual_x, actual_y))
     
     def _calculate_reflection(self, coord: float, min_bound: float, max_bound: float) -> float:
-        """优化的反射计算"""
-        total_range = max_bound - min_bound
-        relative_pos = coord - min_bound
-        
-        n = relative_pos // total_range
-        remainder = relative_pos % total_range
-        
-        if int(n) % 2 == 0:
-            return min_bound + remainder
-        else:
-            return max_bound - remainder
+        return calculate_reflection_numba(coord, min_bound, max_bound)
             
     def draw(self, screen):
         # 绘制波前
@@ -122,6 +131,7 @@ class WaveSimulation:
         self.waves: List[Wave] = []
         self.paused = False
         self.last_wave_pos = (0, 0)
+        self._last_key_time = None
         
     def create_waves(self, x: float, y: float, start_x: float, start_y: float):
         """创建多个同心波"""
@@ -132,6 +142,28 @@ class WaveSimulation:
         self.last_wave_pos = (x, y)
         
     def handle_input(self) -> bool:
+            
+        # current_time = pygame.time.get_ticks()
+        # KEY_INTERVAL = 200  # milliseconds interval between get_pressed reads
+
+        # keys = pygame.key.get_pressed()
+        # if any(keys):
+        #     if self._last_key_time == None or (current_time - self._last_key_time >= KEY_INTERVAL):
+        #         self._last_key_time = current_time
+        #         x, y = pygame.mouse.get_pos()
+        #         if keys[pygame.K_LEFT]:
+        #             x = x - 1
+        #         if keys[pygame.K_RIGHT]:
+        #             x = x + 1
+        #         if keys[pygame.K_UP]:
+        #             y = y - 1
+        #         if keys[pygame.K_DOWN]:
+        #             y = y + 1
+        #         x = 50 if x < 50 else 850 if x > 850 else x 
+        #         y = 50 if y < 50 else 850 if y > 850 else y
+        #         pygame.mouse.set_pos(x, y)
+        #         print(f'mouse pos = {x},{y}')
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -143,11 +175,27 @@ class WaveSimulation:
                 elif event.key == pygame.K_SPACE:
                     self.paused = not self.paused
                     
+                elif event.key == pygame.K_a:
+                    self.waves.clear()
+                    x, y = pygame.mouse.get_pos()
+                    self.last_wave_pos = (x - WINDOW_WIDTH // 2, y - WINDOW_HEIGHT // 2)
+                    self.waves.append(Wave(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, *self.last_wave_pos))
                 elif event.key == pygame.K_RETURN:
                     if self.last_wave_pos:
                         self.waves.clear()
                         self.wave = Wave(WINDOW_WIDTH//2, WINDOW_HEIGHT//2, *self.last_wave_pos)
                         self.waves.append(self.wave)
+                elif event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT or event.key == pygame.K_UP  or event.key == pygame.K_DOWN:
+                    x, y = pygame.mouse.get_pos()
+                    if event.key == pygame.K_LEFT:
+                        x = x - 1
+                    if event.key == pygame.K_RIGHT:
+                        x = x + 1
+                    if event.key == pygame.K_UP:
+                        y = y - 1
+                    if event.key == pygame.K_DOWN:
+                        y = y + 1
+                    pygame.mouse.set_pos(x, y)
                 elif event.key == pygame.K_0:
                     self.wave.type = 0
                 elif event.key == pygame.K_1:
@@ -165,7 +213,7 @@ class WaveSimulation:
                     self.wave = Wave(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2, pos[0] - WINDOW_WIDTH // 2, pos[1] - WINDOW_HEIGHT // 2)
                     self.waves.append(self.wave)
                     self.last_wave_pos = (pos[0] - WINDOW_WIDTH // 2, pos[1] - WINDOW_HEIGHT // 2)
-        
+
         return True
         
     def update(self):
@@ -209,10 +257,16 @@ class WaveSimulation:
         
     def _draw_status(self, screen):
         font = pygame.font.Font(None, 24)
-        
+
         x, y = 10, 10
-        surface = font.render("Esc - Exit", True, GRAY)
-        screen.blit(surface, (x, y))
+        status_texts = [
+            "Esc - Exit",
+            f'FPS:{int(clock.get_fps())}'
+        ]
+        for text in status_texts:
+            surface = font.render(text, True, GRAY)
+            screen.blit(surface, (x, y))
+            y += 25
 
         mouse_x, mouse_y = pygame.mouse.get_pos()
         status_texts = [
@@ -256,7 +310,6 @@ class WaveSimulation:
             y += 25
 
 def main():
-    clock = pygame.time.Clock()
     simulation = WaveSimulation()
     
     running = True
@@ -265,7 +318,7 @@ def main():
         simulation.update()
         simulation.draw(screen)
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(240)
 
     pygame.quit()
 
