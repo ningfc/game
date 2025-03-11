@@ -78,7 +78,10 @@ class PingPongGame:
         pygame.mixer.pre_init(frequency=44100, size=-16, channels=2, buffer=4096)
         pygame.init()
         self.config = GameConfig()
-        self.setup_display(
+        self.setup_display()
+        self.setup_game_objects()
+        self.setup_sound()
+        self.setup_controls()
 
     def setup_display(self):
         self.window_size = self.config.WINDOW_MIN_SIZE
