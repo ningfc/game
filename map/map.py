@@ -88,10 +88,16 @@ def main():
                     drag_delta = (0, 0)
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1 and dragging:  # 左键释放停止拖动
+                    final_drag = drag_delta  # store final offset
                     dragging = False
-                    pan_x += drag_delta[0]
-                    pan_y += drag_delta[1]
+                    pan_x += final_drag[0]
+                    pan_y -= final_drag[1]
                     drag_delta = (0, 0)
+                    if cached_surface:
+                        new_surface = pygame.Surface(screen.get_size())
+                        new_surface.blit(cached_surface, final_drag)
+                        cached_surface = new_surface
+                    # last_draw_params = (zoom_factor, pan_x, pan_y, *screen.get_size())
             elif event.type == pygame.MOUSEMOTION:
                 if dragging:
                     drag_delta = (event.pos[0] - drag_start[0], event.pos[1] - drag_start[1])
@@ -101,12 +107,13 @@ def main():
             current_params = (zoom_factor, pan_x, pan_y, window_width, window_height)
             if current_params != last_draw_params:
                 if draw_thread is None or not draw_thread.is_alive():
-                    new_surface = pygame.Surface((window_width, window_height))
+                    if cached_surface == None:
+                        cached_surface = pygame.Surface((window_width, window_height))
                     draw_thread = threading.Thread(target=draw_map, args=(
-                        new_surface, sf, min_x, max_x, min_y, max_y,
+                        cached_surface, sf, min_x, max_x, min_y, max_y,
                         window_width, window_height, zoom_factor, pan_x, pan_y))
                     draw_thread.start()
-                    cached_surface = new_surface
+                    # cached_surface = new_surface
                     last_draw_params = current_params
         
         screen.fill((0,0,0))
