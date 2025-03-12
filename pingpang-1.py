@@ -6,7 +6,7 @@ import colorsys
 class GameConfig:
     def __init__(self):
         self.WINDOW_MIN_SIZE = (800, 600)
-        self.FPS = 110
+        self.FPS = 120
         self.DAMPING_FACTOR = 0.98
         self.GRAVITY = 9.8 / self.FPS
         self.BALL_RADIUS = 10
