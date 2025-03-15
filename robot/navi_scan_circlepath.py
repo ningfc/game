@@ -2,8 +2,6 @@ import pygame
 import math
 import random
 
-import pygame.display
-
 # 初始化 Pygame
 pygame.init()
 
@@ -44,18 +42,16 @@ spiral = {
     'radius': START_RADIUS,
     'center_x': WIDTH // 2,
     'center_y': HEIGHT // 2,
-    'speed': -1,        # 负值使其顺时针旋转
-    'shrink_rate': (SCAN_WIDTH * 0.6) / 360,  # 根据扫描宽度计算收缩率
+    'speed': -3,        # 负值使其顺时针旋转
+    'shrink_rate': (SCAN_WIDTH * 0.6) / 360 * 3,  # 根据扫描宽度计算收缩率
     'min_radius': 0    # 扫描到中心
 }
 
 path = []  # 存储无人机的运动轨迹
 avoid_tree_path = []  # 新增：存储最近遇到树木的位置
 
-scan_coverage = None
 planner = None
 trees = []
-nearest_tree = []
 
 class ForestConfig:
     WIDTH = 800
@@ -108,79 +104,48 @@ class DronePathPlanner:
         """生成理想的螺旋路径"""
         angle = 0
         radius = self.start_radius
-        while radius > DRONE_RADIUS * 3:
+        while radius > 0:
             x = self.center_x + math.cos(math.radians(angle)) * radius
             y = self.center_y + math.sin(math.radians(angle)) * radius
             self.planned_path.append((x, y))
             angle += self.speed
-            radius -= self.shrink_rate * abs(self.speed)
+            radius -= self.shrink_rate
 
     def find_avoidance_path(self, current_pos, target_pos, trees, avoid_radius=30):
-        global nearest_tree
         """计算避障路径点"""
         # 检查是否需要避障
         if not self.check_collision_line(current_pos, target_pos, trees):
             return [target_pos]
             
         # 需要避障时,生成弧形避障路径
-        # dx = target_pos[0] - current_pos[0]
-        # dy = target_pos[1] - current_pos[1]
-        # distance = math.sqrt(dx*dx + dy*dy)
+        dx = target_pos[0] - current_pos[0]
+        dy = target_pos[1] - current_pos[1]
+        distance = math.sqrt(dx*dx + dy*dy)
         
         # 找到最近的障碍物
         nearest_tree = None
         min_dist = float('inf')
-        forward_dx = target_pos[0] - current_pos[0]
-        forward_dy = target_pos[1] - current_pos[1]
-        mag = math.sqrt(forward_dx**2 + forward_dy**2)
-        if mag != 0:
-            forward = (forward_dx / mag, forward_dy / mag)
-        else:
-            forward = (0, 0)
         for tree in trees:
-            diff_x = tree[0] - current_pos[0]
-            diff_y = tree[1] - current_pos[1]
-            projection = diff_x * forward[0] + diff_y * forward[1]
-            if projection > 0:
-                dist = self.point_to_point_distance(tree, current_pos)
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest_tree = tree
+            dist = self.point_to_line_distance(tree, current_pos, target_pos)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_tree = tree
         
-        if nearest_tree != None and min_dist < DRONE_RADIUS * 3:
-            # 生成弧形避障路径点
-            num_points = 9  # 弧形路径的点数
-            avoid_points = []
-            # 计算无人机当前位置和目标位置分别与障碍物的连线角度
-            dx1 = current_pos[0] - nearest_tree[0]
-            dy1 = current_pos[1] - nearest_tree[1]
-            start_angle = math.atan2(dy1, dx1)
-
-            dx2 = target_pos[0] - nearest_tree[0]
-            dy2 = target_pos[1] - nearest_tree[1]
-            end_angle = math.atan2(dy2, dx2)
-
-            # 规范化角度差至 [-π, π]
-            delta_angle = end_angle - start_angle
-            while delta_angle > math.pi:
-                delta_angle -= 2 * math.pi
-            while delta_angle < -math.pi:
-                delta_angle += 2 * math.pi
-
-            # 使用障碍物到当前位置的距离作为圆弧半径
-            arc_radius = math.sqrt(dx1 * dx1 + dy1 * dy1)
-
-            # 生成弧形路径上的中间点
-            step = delta_angle / (num_points + 1)
-            for i in range(1, num_points + 1):
-                theta = start_angle + step * i
-                x = nearest_tree[0] + arc_radius * math.cos(theta)
-                y = nearest_tree[1] + arc_radius * math.sin(theta)
-                avoid_points.append((x, y))
-                
-            return avoid_points
-        else:
+        if nearest_tree is None:
             return [target_pos]
+            
+        # 生成弧形避障路径点
+        num_points = 5  # 弧形路径的点数
+        avoid_points = []
+        for i in range(num_points):
+            t = i / (num_points - 1)
+            # 使用二次贝塞尔曲线生成弧形路径
+            control_point = self.get_perpendicular_point(current_pos, target_pos, nearest_tree, avoid_radius)
+            x = (1-t)**2 * current_pos[0] + 2*(1-t)*t * control_point[0] + t**2 * target_pos[0]
+            y = (1-t)**2 * current_pos[1] + 2*(1-t)*t * control_point[1] + t**2 * target_pos[1]
+            avoid_points.append((x, y))
+            
+        return avoid_points
 
     def check_collision_line(self, start, end, trees):
         """检查路径是否与树木碰撞"""
@@ -189,9 +154,6 @@ class DronePathPlanner:
                 return True
         return False
     
-    def point_to_point_distance(self, point1, point2):
-        return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
-
     def point_to_line_distance(self, point, line_start, line_end):
         """计算点到线段的距离"""
         x0, y0 = point[0], point[1]
@@ -241,11 +203,17 @@ def update_drone_position():
     
     # 检查路径是否与树木碰撞
     if planner.check_collision_line(prev_pos, candidate, trees):
-        # 计算避障路径
-        avoidance_path = planner.find_avoidance_path(prev_pos, candidate, trees)
-        if avoidance_path:
-            candidate = avoidance_path[-1]
-            avoid_tree_path.extend(avoidance_path)
+        # 求出所有树木距离路径的距离，选择最近的
+        nearest_tree = None
+        min_dist = float('inf')
+        for tree in trees:
+            d = planner.point_to_line_distance(tree, prev_pos, candidate)
+            if d < min_dist:
+                min_dist = d
+                nearest_tree = tree
+        if nearest_tree:
+            # 添加最近树的位置到全局折线列表
+            avoid_tree_path.append((nearest_tree[0], nearest_tree[1]))
     
     # 更新无人机位置
     drone_pos['x'], drone_pos['y'] = candidate
@@ -258,13 +226,10 @@ def update_drone_position():
         reset_scan()
 
 def reset_scan():
-    global path, avoid_tree_path, scan_coverage
+    global path, avoid_tree_path
     spiral['radius'] = START_RADIUS
     spiral['angle'] = 0
     path.clear()
-    if scan_coverage != None:
-        scan_coverage.reset() 
-    
     # 重置最近树木折线路径
     avoid_tree_path.clear()
     drone_pos['x'] = spiral['center_x'] + spiral['radius']
@@ -279,9 +244,8 @@ class ScanCoverage:
         
         # 计算样地区域的网格大小
         self.grid_size = scan_size // cell_size
-        self.total_cells = self.grid_size * self.grid_size
-        # 初始化网格，False 表示未扫描，True 表示已扫描
         self.grid = [[False] * self.grid_size for _ in range(self.grid_size)]
+        self.total_cells = self.grid_size * self.grid_size
         self.scanned_cells = 0
         
         # 计算样地区域的边界
@@ -334,12 +298,9 @@ class ScanCoverage:
                         self.cell_size
                     )
                     pygame.draw.rect(screen, (0, 200, 0), rect)
-    def reset(self):
-        self.grid = [[False] * self.grid_size for _ in range(self.grid_size)]
-        self.scanned_cells = 0
 
 def main():
-    global planner, trees, scan_coverage
+    global planner, trees
 
     trees = generate_forest()
     clock = pygame.time.Clock()
@@ -376,7 +337,7 @@ def main():
         
         # 绘制预先规划的路径
         if len(planner.planned_path) > 1:
-            pygame.draw.lines(screen, GRAY, False, planner.planned_path, 5)
+            pygame.draw.lines(screen, BLUE, False, planner.planned_path, 5)
         
         # 可选：绘制覆盖网格（调试用）
         scan_coverage.draw_coverage(screen)
@@ -394,7 +355,6 @@ def main():
         # 绘制树木
         for x, y, radius in trees:
             pygame.draw.circle(screen, GREEN, (int(x), int(y)), int(radius))
-        pygame.draw.circle(screen, RED, (nearest_tree[:2]), int(radius))
         
         # 绘制无人机
         pygame.draw.circle(screen, DRONE_COLOR, 
@@ -403,19 +363,19 @@ def main():
         
         # 新增：绘制连接最近遇到树木的折线
         if len(avoid_tree_path) > 1:
-            pygame.draw.lines(screen, BLUE, False, avoid_tree_path, 2)
+            pygame.draw.lines(screen, YELLOW, False, avoid_tree_path, 2)
         
-        font = pygame.font.Font(None, 36)
-
-        fps_text = font.render(f"FPS: {int(clock.get_fps())}", True, BLACK)
-        screen.blit(fps_text, (10, 10))
-
         # 显示扫描覆盖率
-        coverage_text = font.render(f"Coverage: {scan_coverage.get_coverage_percentage():.1f}%", True, BLACK)
-        screen.blit(coverage_text, (100, 10))
+        font = pygame.font.Font(None, 36)
+        coverage_text = font.render(
+            f"Coverage: {scan_coverage.get_coverage_percentage():.1f}%", 
+            True, 
+            BLACK
+        )
+        screen.blit(coverage_text, (10, 10))
         
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(6)
     
     pygame.quit()
 
